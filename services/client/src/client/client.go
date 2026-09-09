@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bufio"
 	"net"
+	"os"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -64,6 +66,65 @@ func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
+	clientArgs := []any{"agency-id", client.config.AgencyId}
+
+	inputFileName := client.config.InputFile
+	inputFile, err := os.Open(inputFileName)
+
+	if err != nil {
+		logger.Error("open-input-file", logger.Fail, clientArgs...)
+		return err
+	}
+	defer inputFile.Close()
+
+	outputFileName := client.config.OutputFile
+	outputFile, err := os.Create(outputFileName)
+
+	if err != nil {
+		logger.Error("create-output-file", logger.Fail, clientArgs...)
+		return err
+	}
+	defer outputFile.Close()
+
+	scanner := bufio.NewScanner(inputFile)
+
+	for scanner.Scan() {
+		logger.Info(mainAction, logger.InProgress, clientArgs...)
+
+		clientMessage := scanner.Text()
+
+		if err := safe_socket.SendAll(client.conn, []byte(clientMessage)); err != nil {
+			logger.Error("send-message", logger.Fail, clientArgs...)
+			return err
+		}
+
+		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+		if err != nil {
+			logger.Error("recv-response", logger.Fail, clientArgs...)
+			return err
+		}
+
+		if _, err := outputFile.Write(append(responseBuffer, '\n')); err != nil {
+			logger.Error("write-output-file", logger.Fail, clientArgs...)
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		logger.Error("scan-input-file", logger.Fail, clientArgs...)
+		return err
+	}
+
+	logger.Info(mainAction, logger.Success, clientArgs...)
+
+	return nil
+}
+
+/*
+func (client *Client) Run() error {
+	const mainAction = "test-echo-server"
+	defer client.conn.Close()
+
 	for messageId := range ECHO_CLIENT_MESSAGE_AMOUNT {
 		messageArgs := []any{"agency-id", client.config.AgencyId, "message-id", messageId}
 		logger.Info(mainAction, logger.InProgress, messageArgs...)
@@ -92,3 +153,4 @@ func (client *Client) Run() error {
 
 	return nil
 }
+*/
