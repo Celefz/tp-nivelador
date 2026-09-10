@@ -7,55 +7,6 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/lottery"
 )
 
-const (
-	TYPE_BETS byte = 1
-	TYPE_END  byte = 2
-
-	BATCH_HEADER_LEN = 2
-	BET_HEADER_LEN   = 2
-	MIN_BET_LEN      = 20
-)
-
-func is_valid_type(t byte) bool {
-	return t == TYPE_BETS || t == TYPE_END
-}
-
-func ParseMessageType(packet []byte) (byte, error) {
-	messageType := packet[0]
-	if !is_valid_type(messageType) {
-		return 0, fmt.Errorf("invalid message type: %d", packet[0])
-	}
-
-	return messageType, nil
-}
-
-func SerializeEnd(agencyID uint8) []byte {
-	packet := make([]byte, 0, 4)
-	packet = binary.BigEndian.AppendUint16(packet, 2)
-	packet = append(packet, TYPE_END, agencyID)
-	return packet
-}
-
-func IsEndPacket(data []byte) bool {
-	return len(data) == 1 && data[0] == TYPE_END
-}
-
-func SerializeBatch(bets []lottery.Bet, agencyId uint8) []byte {
-	batchData := make([]byte, 0, MIN_BET_LEN)
-	batchData = append(batchData, TYPE_BETS) // 1B
-	batchData = append(batchData, agencyId)  // 1B
-
-	for _, bet := range bets {
-		batchData = append(batchData, SerializeBet(bet)...)
-	}
-
-	packet := make([]byte, 0, len(batchData)+2)
-	packet = binary.BigEndian.AppendUint16(packet, uint16(len(batchData))) // 2B
-	packet = append(packet, batchData...)
-
-	return packet
-}
-
 func SerializeBet(bet lottery.Bet) []byte {
 	betData := make([]byte, 0, MIN_BET_LEN)
 
@@ -72,35 +23,6 @@ func SerializeBet(bet lottery.Bet) []byte {
 	betData = binary.BigEndian.AppendUint32(betData, bet.Number)   // 4B
 
 	return betData
-}
-
-func DeserializeBatch(batchData []byte) ([]lottery.Bet, error) {
-	if len(batchData) < BATCH_HEADER_LEN {
-		return nil, fmt.Errorf("packet too short")
-	}
-
-	messageType, err := ParseMessageType(batchData)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if messageType != TYPE_BETS {
-		return nil, fmt.Errorf("invalid bet type: %d", batchData[0])
-	}
-
-	agencyId := batchData[1]
-	bets := []lottery.Bet{}
-
-	for offset := BATCH_HEADER_LEN; offset < len(batchData); {
-		bet, size, err := DeserializeBet(batchData[offset:], agencyId)
-		if err != nil {
-			return nil, err
-		}
-		bets = append(bets, bet)
-		offset += size
-	}
-	return bets, nil
 }
 
 func DeserializeBet(betData []byte, agencyId uint8) (lottery.Bet, int, error) {
