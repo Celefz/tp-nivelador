@@ -9,6 +9,9 @@ services:
       - SERVER_HOST=server
       - SERVER_PORT=5678
       - AGENCY_QUORUM_MIN=3
+      - LOTTERY_STORAGE_PATH=output/lottery_bets.csv
+    volumes: 
+      - ./output:/output
     ports:
     - "5678:5678"
 
