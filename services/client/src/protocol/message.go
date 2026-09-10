@@ -8,6 +8,7 @@ import (
 const (
 	TYPE_BETS byte = 1
 	TYPE_END  byte = 2
+	TYPE_ACK  byte = 3
 
 	BATCH_HEADER_LEN = 2
 	BET_HEADER_LEN   = 2
@@ -15,7 +16,7 @@ const (
 )
 
 func is_valid_type(t byte) bool {
-	return t == TYPE_BETS || t == TYPE_END
+	return t == TYPE_BETS || t == TYPE_END || t == TYPE_ACK
 }
 
 func ParseMessageType(packet []byte) (byte, error) {
@@ -34,6 +35,17 @@ func SerializeEnd(agencyID uint8) []byte {
 	return packet
 }
 
+func SerializeAck(agencyID uint8) []byte {
+	packet := make([]byte, 0, 4)
+	packet = binary.BigEndian.AppendUint16(packet, 2)
+	packet = append(packet, TYPE_ACK, agencyID)
+	return packet
+}
+
 func IsEndPacket(data []byte) bool {
 	return len(data) == 1 && data[0] == TYPE_END
+}
+
+func IsAckPacket(data []byte) bool {
+	return len(data) == 2 && data[0] == TYPE_ACK
 }

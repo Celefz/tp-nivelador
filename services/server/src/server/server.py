@@ -76,10 +76,13 @@ class Server:
                     agency_id = packet[1]
                     break
 
+                agency_id = packet[1]
                 bets = protocol.deserialize_batch(packet)
 
                 with self._storage_lock:
                     self.lottery.store_bets(bets)
+
+                safe_socket.send_all(client_socket, protocol.serialize_ack(agency_id))
 
             self._register_agency(agency_id)
             self._wait_for_agency_quorum()

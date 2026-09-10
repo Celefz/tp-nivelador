@@ -254,6 +254,35 @@ func (client *Client) sendBatch(batch []lottery.Bet, agencyID uint8, clientArgs 
 		return err
 	}
 
+	if err := client.recvAck(agencyID, clientArgs, ctx); err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
+		logger.Error("recv-ack", logger.Fail, clientArgs...)
+		return err
+	}
+
+	return nil
+}
+
+func (client *Client) recvAck(agencyID uint8, clientArgs []any, ctx context.Context) error {
+	packet, err := recvPacket(client.conn)
+	if err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
+		logger.Error("recv-ack", logger.Fail, clientArgs...)
+		return err
+	}
+
+	if !protocol.IsAckPacket(packet) {
+		return fmt.Errorf("unexpected packet while waiting for ack: type=%d len=%d", packet[0], len(packet))
+	}
+
+	if len(packet) != 2 || packet[1] != agencyID {
+		return fmt.Errorf("unexpected ack agency id: got=%d expected=%d", packet[1], agencyID)
+	}
+
 	return nil
 }
 
