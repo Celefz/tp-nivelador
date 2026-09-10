@@ -15,7 +15,20 @@ const (
 	MIN_PACKET_LEN = 20
 )
 
-func EndPacket(agencyID uint8) []byte {
+func is_valid_type(t byte) bool {
+	return t == TYPE_BET || t == TYPE_END
+}
+
+func ParseMessageType(packet []byte) (byte, error) {
+	messageType := packet[0]
+	if !is_valid_type(messageType) {
+		return 0, fmt.Errorf("invalid message type: %d", packet[0])
+	}
+
+	return messageType, nil
+}
+
+func SerializeEnd(agencyID uint8) []byte {
 	packet := make([]byte, 0, 4)
 	packet = binary.BigEndian.AppendUint16(packet, 2)
 	packet = append(packet, TYPE_END, agencyID)
@@ -26,7 +39,7 @@ func IsEndPacket(data []byte) bool {
 	return len(data) == 1 && data[0] == TYPE_END
 }
 
-func Serialize(bet lottery.Bet) []byte {
+func SerializeBet(bet lottery.Bet) []byte {
 	betData := make([]byte, 0, 100)
 
 	firstNameLen := len(bet.FirstName)
@@ -49,12 +62,17 @@ func Serialize(bet lottery.Bet) []byte {
 	return betData
 }
 
-func Deserialize(betData []byte) (lottery.Bet, error) {
+func DeserializeBet(betData []byte) (lottery.Bet, error) {
 	if len(betData) < HEADER_LEN {
 		return lottery.Bet{}, fmt.Errorf("packet too short")
 	}
 
-	if betData[0] != TYPE_BET {
+	messageType, err := ParseMessageType(betData)
+	if err != nil {
+		return lottery.Bet{}, err
+	}
+
+	if messageType != TYPE_BET {
 		return lottery.Bet{}, fmt.Errorf("invalid bet type: %d", betData[0])
 	}
 

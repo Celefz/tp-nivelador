@@ -38,14 +38,14 @@ class Server:
                     agency_id = packet[1]
                     break
 
-                bet = protocol.deserialize(packet)
+                bet = protocol.deserialize_bet(packet)
                 self.lottery.store_bets([bet])
 
             for stored_bet in self.lottery.load_bets():
                 if self.lottery.has_won(stored_bet) and stored_bet.agency_id == agency_id:
-                    safe_socket.send_all(client_socket, protocol.serialize(stored_bet))
+                    safe_socket.send_all(client_socket, protocol.serialize_bet(stored_bet))
 
-            safe_socket.send_all(client_socket, protocol.end_packet())
+            safe_socket.send_all(client_socket, protocol.serialize_end())
 
             logger.info(action, logger.LogResult.success)
 

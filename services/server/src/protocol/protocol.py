@@ -6,8 +6,15 @@ TYPE_END = 2
 HEADER_LEN = 4
 MIN_PACKET_LEN = 20
 
+def parse_message_type(packet: bytes) -> int:
+    message_type = packet[0]
+    if message_type not in (TYPE_BET, TYPE_END):
+        raise ValueError(f"invalid message type: {message_type}")
 
-def end_packet() -> bytes:
+    return message_type
+
+
+def serialize_end() -> bytes:
     payload = bytearray([TYPE_END])
     return len(payload).to_bytes(2, byteorder="big") + bytes(payload)
 
@@ -16,7 +23,7 @@ def is_end_packet(packet: bytes) -> bool:
     return len(packet) == 2 and packet[0] == TYPE_END
 
 
-def serialize(bet) -> bytes:
+def serialize_bet(bet) -> bytes:
     first_name = bet.first_name.encode("utf-8")
     last_name = bet.last_name.encode("utf-8")
     birthdate = bet.birthdate.encode("utf-8")
@@ -44,11 +51,12 @@ def serialize(bet) -> bytes:
     return bytes(bet_data)
 
 
-def deserialize(bet_data: bytes):
+def deserialize_bet(bet_data: bytes):
     if len(bet_data) < HEADER_LEN:
         raise ValueError("packet too short")
 
-    if bet_data[0] != TYPE_BET:
+    message_type = parse_message_type(bet_data)
+    if message_type != TYPE_BET:
         raise ValueError(f"invalid bet type: {bet_data[0]}")
 
     agency_id = bet_data[1]

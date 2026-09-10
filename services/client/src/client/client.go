@@ -110,7 +110,7 @@ func (client *Client) Run() error {
 			return err
 		}
 
-		if err := safe_socket.SendAll(client.conn, protocol.Serialize(bet)); err != nil {
+		if err := safe_socket.SendAll(client.conn, protocol.SerializeBet(bet)); err != nil {
 			logger.Error("send-bet", logger.Fail, clientArgs...)
 			return err
 		}
@@ -121,7 +121,7 @@ func (client *Client) Run() error {
 		return err
 	}
 
-	if err := safe_socket.SendAll(client.conn, protocol.EndPacket(uint8(agencyID))); err != nil {
+	if err := safe_socket.SendAll(client.conn, protocol.SerializeEnd(uint8(agencyID))); err != nil {
 		logger.Error("send-end", logger.Fail, clientArgs...)
 		return err
 	}
@@ -146,7 +146,7 @@ func (client *Client) Run() error {
 			break
 		}
 
-		winner, err := protocol.Deserialize(packet)
+		winner, err := protocol.DeserializeBet(packet)
 
 		if err != nil {
 			logger.Error("deserialize-winner", logger.Fail, clientArgs...)
