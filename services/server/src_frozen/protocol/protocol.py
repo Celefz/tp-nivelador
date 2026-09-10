@@ -1,4 +1,3 @@
-import struct
 from services.server.src_frozen.lottery.bet import Bet
 
 TYPE_BET = 1
