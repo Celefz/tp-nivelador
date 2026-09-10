@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -38,13 +39,22 @@ func recvPacket(conn net.Conn) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(header) != 2 {
+		return nil, io.ErrUnexpectedEOF
+	}
 
 	packetLen := int(binary.BigEndian.Uint16(header))
+	if packetLen == 0 {
+		return nil, fmt.Errorf("invalid empty packet")
+	}
 
 	packet, err := safe_socket.RecvAll(conn, packetLen)
 
 	if err != nil {
 		return nil, err
+	}
+	if len(packet) != packetLen {
+		return nil, io.ErrUnexpectedEOF
 	}
 
 	return packet, nil
@@ -101,25 +111,48 @@ func (client *Client) Run() error {
 	}
 	defer inputFile.Close()
 
+	batchSize, err := strconv.ParseInt(client.config.BatchSize, 10, 16)
+
+	if err != nil || batchSize == 0 {
+		return fmt.Errorf("invalid batch size %q", client.config.BatchSize)
+	}
+
+	batch := make([]lottery.Bet, 0, int(batchSize))
+
 	scanner := bufio.NewScanner(inputFile)
 
 	for scanner.Scan() {
 		logger.Info(mainAction, logger.InProgress, clientArgs...)
 		bet, err := lottery.ParseBetFromCsv(scanner.Text(), uint8(agencyID))
+
 		if err != nil {
 			logger.Error("parse-bet", logger.Fail, clientArgs...)
 			return err
 		}
 
-		if err := safe_socket.SendAll(client.conn, protocol.SerializeBet(bet)); err != nil {
-			logger.Error("send-bet", logger.Fail, clientArgs...)
-			return err
+		batch = append(batch, bet)
+
+		if len(batch) == int(batchSize) {
+			packet := protocol.SerializeBatch(batch, uint8(agencyID))
+			if err := safe_socket.SendAll(client.conn, packet); err != nil {
+				logger.Error("send-batch", logger.Fail, clientArgs...)
+				return err
+			}
+
+			batch = batch[:0]
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		logger.Error("scan-input-file", logger.Fail, clientArgs...)
 		return err
+	}
+	if len(batch) > 0 {
+		packet := protocol.SerializeBatch(batch, uint8(agencyID))
+		if err := safe_socket.SendAll(client.conn, packet); err != nil {
+			logger.Error("send-batch", logger.Fail, clientArgs...)
+			return err
+		}
 	}
 
 	if err := safe_socket.SendAll(client.conn, protocol.SerializeEnd(uint8(agencyID))); err != nil {
@@ -147,16 +180,18 @@ func (client *Client) Run() error {
 			break
 		}
 
-		winner, err := protocol.DeserializeBet(packet)
+		winners, err := protocol.DeserializeBatch(packet)
 
 		if err != nil {
 			logger.Error("deserialize-winner", logger.Fail, clientArgs...)
 			return err
 		}
 
-		if _, err := fmt.Fprintln(outputFile, lottery.ParseBetToCsv(winner)); err != nil { // TODO: chequear la cant de bytes escritos
-			logger.Error("write-output-file", logger.Fail, clientArgs...)
-			return err
+		for _, winner := range winners {
+			if _, err := fmt.Fprintln(outputFile, lottery.ParseBetToCsv(winner)); err != nil {
+				logger.Error("write-output-file", logger.Fail, clientArgs...)
+				return err
+			}
 		}
 	}
 
