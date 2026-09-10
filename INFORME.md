@@ -6,7 +6,7 @@ En el protocolo implementado, definimos tres tipos principales de mensajes:
 
 * `TYPE_BETS`: referencia un conjunto de apuestas, todas juntas en un batch. 
 
-    Las apuestas forman un paquete e la siguiente forma:
+    Las apuestas forman un paquete de la siguiente forma:
 
     ![Estructura de un bet](images/bet.png)
 
@@ -18,9 +18,18 @@ En el protocolo implementado, definimos tres tipos principales de mensajes:
 
     Por otro lado, cada batch lleva el identificador de agencia y un conjunto de apuestas serializadas. Además, llevan en su primer campo el tamaño del paquete entero. Esto permite leer la cantidad exacta de bytes que corresponde, ayudando al manejo de los problemas de short read y short write.
 
-Además, las estructuras principales del protocolo quedaron separadas por responsabilidad. La parte de bet se encarga de serializar y deserializar una sola apuesta, la parte de batch agrupa varias apuestas y prepara el paquete que se envía por socket, y la parte de ack define la confirmación del servidor para cada batch recibido. Esto mantiene el protocolo más claro y facilita mantener o extender cada pieza por separado.
+* `TYPE_ACK`: Permite al cliente saber que el servidor recibió su batch de apuestas enviado.
 
-El flujo queda entonces muy claro: el cliente envía un batch, el servidor lo procesa y confirma con ACK, y recién después el cliente continúa con el siguiente batch o con el mensaje final de cierre.
+* `TYPE_END`: Sirve para que el servidor sepa cuando el cliente terminó de enviarle todas sus apuestas.
+
+    ![Flujo de ACK y END](images/ack-end.png)
+
+    Ambos tipos tienen la misma estructura, diferenciandose solo por el byte de tipo. En este caso, nuevamente están presentes los bytes de longitud, que facilitan el procesamiento de los paquetes.
+
+En cuanto al flujo general del protocolo, el cliente envía un batch, el servidor lo procesa y confirma con ACK, y recién después el cliente continúa con el siguiente batch o con el mensaje final de cierre. Una vez recibido el mensaje final, el servidor procede a enviar las apuestas ganadoras.
+
+![Diagrama del sistema](images/diagrama.jpg)
+
 
 ## Concurrencia
 
@@ -34,9 +43,8 @@ El cliente usa un context y un goroutine para detectar SIGTERM y cerrar la conex
 
 En el servidor, el evento de apagado marca el cierre global del servicio, notifica las condiciones en espera, cierra sockets activos y hace join de los threads. Esto evita que el proceso quede bloqueado en tareas pendientes o en espera de clientes que ya no deberían seguir activos.
 
-![Diagrama del sistema](images/diagrama.jpg)
 
 
 
 
-![Flujo de ACK y END](images/ack-end.png)
+
