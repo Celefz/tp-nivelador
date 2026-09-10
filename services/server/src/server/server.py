@@ -30,6 +30,12 @@ class Server:
         self._quorum_condition = threading.Condition()
         self._completed_agencies = set()
 
+        self._shutdown_event = threading.Event()
+        self._server_socket = None
+        self._client_threads = []
+        self._client_sockets = set()
+        self._clients_lock = threading.Lock()
+
         with open(storage_path, "a"):
             pass
 
@@ -43,16 +49,28 @@ class Server:
 
     def _wait_for_agency_quorum(self):
         with self._quorum_condition:
-            while len(self._completed_agencies) < self.agency_quorum_min:
-                self._quorum_condition.wait()
+            while (
+                len(self._completed_agencies) < self.agency_quorum_min
+                and not self._shutdown_event.is_set()
+            ):
+                self._quorum_condition.wait(timeout=0.1)
 
     def _handle_client(self, client_socket):
         action = "handle-client"
 
+        with self._clients_lock:
+            self._client_sockets.add(client_socket)
+
         try:
             logger.info(action, logger.LogResult.in_progress)
+
             while True:
+                if self._shutdown_event.is_set():
+                    return
+
                 packet = _recv_packet(client_socket)
+                if not packet:
+                    return
 
                 if protocol.is_end_packet(packet):
                     agency_id = packet[1]
@@ -65,6 +83,9 @@ class Server:
 
             self._register_agency(agency_id)
             self._wait_for_agency_quorum()
+
+            if self._shutdown_event.is_set():
+                return
 
             with self._storage_lock:
                 stored_bets =  self.lottery.load_bets()
@@ -85,23 +106,60 @@ class Server:
         finally:
             client_socket.close()
 
+            with self._clients_lock:
+                self._client_sockets.discard(client_socket)
+
+    def shutdown(self):
+        logger.info("shutdown", logger.LogResult.in_progress)
+
+        self._shutdown_event.set()
+
+        with self._quorum_condition:
+            self._quorum_condition.notify_all()
+
+        if self._server_socket is not None:
+            self._server_socket.close()
+
+        with self._clients_lock:
+            client_sockets = list(self._client_sockets)
+            client_threads = list(self._client_threads)
+
+        for client_socket in client_sockets:
+            client_socket.close()
+
+        for client_thread in client_threads:
+            client_thread.join()
+
+        logger.info("shutdown", logger.LogResult.success)
+
     def run(self):
         action = "accept-connection"
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+            self._server_socket = server_socket
             server_socket.bind((self.server_host, self.server_port))
             server_socket.listen()
-            while True:
+
+            while not self._shutdown_event.is_set():
                 try:
                     logger.info(action, logger.LogResult.in_progress)
                     client_socket, _ = server_socket.accept()
-                except Exception as e:
+
+                except OSError:
+                    if self._shutdown_event.is_set():
+                        break
+
                     logger.error(action, logger.LogResult.fail)
-                    raise e
+                    raise
 
                 logger.info(action, logger.LogResult.success)
                 client_thread = threading.Thread(
                     target=self._handle_client,
                     args=(client_socket,),
-                    daemon=True,
                 )
+
+                with self._clients_lock:
+                    self._client_threads.append(client_thread)
+
                 client_thread.start()
+
+            self._server_socket = None

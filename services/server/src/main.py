@@ -1,6 +1,6 @@
 import os
+import signal
 import sys
-
 import logger
 import server
 
@@ -18,6 +18,15 @@ def main():
         LOTTERY_STORAGE_PATH,
         AGENCY_QUORUM_MIN,
     )
+
+    def handle_sigterm(signum, frame):
+        s.shutdown()
+
+    signal.signal(
+        signal.SIGTERM,
+        handle_sigterm,
+    )
+
     try:
         s.run()
     except Exception as e:

@@ -2,7 +2,9 @@ package client
 
 import (
 	"bufio"
+	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -35,7 +37,6 @@ type Client struct {
 
 func recvPacket(conn net.Conn) ([]byte, error) {
 	header, err := safe_socket.RecvAll(conn, 2)
-
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +50,6 @@ func recvPacket(conn net.Conn) ([]byte, error) {
 	}
 
 	packet, err := safe_socket.RecvAll(conn, packetLen)
-
 	if err != nil {
 		return nil, err
 	}
@@ -67,8 +67,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config}
-	return client, nil
+	return &Client{conn: conn, config: config}, nil
 }
 
 func connectToServer(host, port string) (net.Conn, error) {
@@ -92,9 +91,36 @@ func connectToServer(host, port string) (net.Conn, error) {
 	return conn, err
 }
 
+func (client *Client) closeConn() {
+	if client.conn != nil {
+		_ = client.conn.Close()
+	}
+}
+
+func shouldIgnoreShutdownError(err error, ctx context.Context) bool {
+	if ctx != nil && ctx.Err() != nil {
+		return true
+	}
+
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed)
+}
+
 func (client *Client) Run() error {
+	return client.RunWithContext(context.Background())
+}
+
+func (client *Client) RunWithContext(ctx context.Context) error {
 	const mainAction = "send-bets"
-	defer client.conn.Close()
+	defer client.closeConn()
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	go func() {
+		<-ctx.Done()
+		client.closeConn()
+	}()
 
 	clientArgs := []any{"agency-id", client.config.AgencyId}
 
@@ -116,7 +142,10 @@ func (client *Client) Run() error {
 		return err
 	}
 
-	if err := client.sendBets(inputFile, agencyID, batchSize, clientArgs); err != nil {
+	if err := client.sendBets(inputFile, agencyID, batchSize, clientArgs, ctx); err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
 		return err
 	}
 
@@ -129,7 +158,10 @@ func (client *Client) Run() error {
 
 	defer outputFile.Close()
 
-	if err := client.recvWinners(outputFile, clientArgs); err != nil {
+	if err := client.recvWinners(outputFile, clientArgs, ctx); err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
 		return err
 	}
 
@@ -155,11 +187,15 @@ func (client *Client) parseBatchSize() (int, error) {
 	return int(batchSize), nil
 }
 
-func (client *Client) sendBets(inputFile io.Reader, agencyID uint8, batchSize int, clientArgs []any) error {
+func (client *Client) sendBets(inputFile io.Reader, agencyID uint8, batchSize int, clientArgs []any, ctx context.Context) error {
 	batch := make([]lottery.Bet, 0, batchSize)
 	scanner := bufio.NewScanner(inputFile)
 
 	for scanner.Scan() {
+		if ctx.Err() != nil {
+			return nil
+		}
+
 		logger.Info("send-bets", logger.InProgress, clientArgs...)
 
 		bet, err := lottery.ParseBetFromCsv(scanner.Text(), agencyID)
@@ -170,7 +206,10 @@ func (client *Client) sendBets(inputFile io.Reader, agencyID uint8, batchSize in
 
 		batch = append(batch, bet)
 		if len(batch) == batchSize {
-			if err := client.sendBatch(batch, agencyID, clientArgs); err != nil {
+			if err := client.sendBatch(batch, agencyID, clientArgs, ctx); err != nil {
+				if shouldIgnoreShutdownError(err, ctx) {
+					return nil
+				}
 				return err
 			}
 			batch = batch[:0]
@@ -183,21 +222,34 @@ func (client *Client) sendBets(inputFile io.Reader, agencyID uint8, batchSize in
 	}
 
 	if len(batch) > 0 {
-		if err := client.sendBatch(batch, agencyID, clientArgs); err != nil {
+		if err := client.sendBatch(batch, agencyID, clientArgs, ctx); err != nil {
+			if shouldIgnoreShutdownError(err, ctx) {
+				return nil
+			}
 			return err
 		}
 	}
 
-	if err := client.sendEnd(agencyID, clientArgs); err != nil {
+	if err := client.sendEnd(agencyID, clientArgs, ctx); err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
 		return err
 	}
 
 	return nil
 }
 
-func (client *Client) sendBatch(batch []lottery.Bet, agencyID uint8, clientArgs []any) error {
+func (client *Client) sendBatch(batch []lottery.Bet, agencyID uint8, clientArgs []any, ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	packet := protocol.SerializeBatch(batch, agencyID)
 	if err := safe_socket.SendAll(client.conn, packet); err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
 		logger.Error("send-batch", logger.Fail, clientArgs...)
 		return err
 	}
@@ -205,8 +257,15 @@ func (client *Client) sendBatch(batch []lottery.Bet, agencyID uint8, clientArgs 
 	return nil
 }
 
-func (client *Client) sendEnd(agencyID uint8, clientArgs []any) error {
+func (client *Client) sendEnd(agencyID uint8, clientArgs []any, ctx context.Context) error {
+	if ctx.Err() != nil {
+		return nil
+	}
+
 	if err := safe_socket.SendAll(client.conn, protocol.SerializeEnd(agencyID)); err != nil {
+		if shouldIgnoreShutdownError(err, ctx) {
+			return nil
+		}
 		logger.Error("send-end", logger.Fail, clientArgs...)
 		return err
 	}
@@ -214,10 +273,17 @@ func (client *Client) sendEnd(agencyID uint8, clientArgs []any) error {
 	return nil
 }
 
-func (client *Client) recvWinners(outputFile io.Writer, clientArgs []any) error {
+func (client *Client) recvWinners(outputFile io.Writer, clientArgs []any, ctx context.Context) error {
 	for {
+		if ctx.Err() != nil {
+			return nil
+		}
+
 		packet, err := recvPacket(client.conn)
 		if err != nil {
+			if shouldIgnoreShutdownError(err, ctx) {
+				return nil
+			}
 			logger.Error("recv-winner", logger.Fail, clientArgs...)
 			return err
 		}
@@ -228,12 +294,22 @@ func (client *Client) recvWinners(outputFile io.Writer, clientArgs []any) error 
 
 		winners, err := protocol.DeserializeBatch(packet)
 		if err != nil {
+			if shouldIgnoreShutdownError(err, ctx) {
+				return nil
+			}
 			logger.Error("deserialize-winner", logger.Fail, clientArgs...)
 			return err
 		}
 
 		for _, winner := range winners {
+			if ctx.Err() != nil {
+				return nil
+			}
+
 			if _, err := fmt.Fprintln(outputFile, lottery.ParseBetToCsv(winner)); err != nil {
+				if shouldIgnoreShutdownError(err, ctx) {
+					return nil
+				}
 				logger.Error("write-output-file", logger.Fail, clientArgs...)
 				return err
 			}
