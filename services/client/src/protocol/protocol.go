@@ -13,7 +13,7 @@ const (
 
 	BATCH_HEADER_LEN = 2
 	BET_HEADER_LEN   = 2
-	MIN_BET_LEN      = 18
+	MIN_BET_LEN      = 20
 )
 
 func is_valid_type(t byte) bool {
@@ -41,7 +41,7 @@ func IsEndPacket(data []byte) bool {
 }
 
 func SerializeBatch(bets []lottery.Bet, agencyId uint8) []byte {
-	batchData := make([]byte, 0, 100)
+	batchData := make([]byte, 0, MIN_BET_LEN)
 	batchData = append(batchData, TYPE_BETS) // 1B
 	batchData = append(batchData, agencyId)  // 1B
 
@@ -69,7 +69,7 @@ func SerializeBet(bet lottery.Bet) []byte {
 	betData = append(betData, []byte(bet.LastName)...)             // Variable length
 	betData = append(betData, []byte(bet.Birthdate)...)            // 10B
 	betData = binary.BigEndian.AppendUint32(betData, bet.Document) // 4B
-	betData = binary.BigEndian.AppendUint16(betData, bet.Number)   // 2B
+	betData = binary.BigEndian.AppendUint32(betData, bet.Number)   // 4B
 
 	return betData
 }
@@ -130,7 +130,7 @@ func DeserializeBet(betData []byte, agencyId uint8) (lottery.Bet, int, error) {
 	lastName := string(betData[lastNameStart:birthdateStart])
 	birthdate := string(betData[birthdateStart:documentStart])
 	document := binary.BigEndian.Uint32(betData[documentStart:numberStart])
-	number := binary.BigEndian.Uint16(betData[numberStart:betLen])
+	number := binary.BigEndian.Uint32(betData[numberStart:betLen])
 
 	return lottery.Bet{
 		AgencyId:  agencyId,

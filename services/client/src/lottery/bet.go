@@ -10,7 +10,6 @@ const (
 	FIELD_AMOUNT = 5
 	BASE_10      = 10
 	BITS_32      = 32
-	BITS_16      = 16
 )
 
 type Bet struct {
@@ -19,7 +18,7 @@ type Bet struct {
 	LastName  string
 	Document  uint32
 	Birthdate string
-	Number    uint16
+	Number    uint32
 }
 
 func ParseBetFromCsv(line string, agencyId uint8) (Bet, error) {
@@ -34,7 +33,7 @@ func ParseBetFromCsv(line string, agencyId uint8) (Bet, error) {
 		return Bet{}, fmt.Errorf("invalid document number: %s", fields[2])
 	}
 
-	number, err := strconv.ParseUint(fields[4], BASE_10, BITS_16)
+	number, err := strconv.ParseUint(fields[4], BASE_10, BITS_32)
 	if err != nil {
 		return Bet{}, fmt.Errorf("invalid bet number: %s", fields[4])
 	}
@@ -45,7 +44,7 @@ func ParseBetFromCsv(line string, agencyId uint8) (Bet, error) {
 		LastName:  fields[1],
 		Document:  uint32(document),
 		Birthdate: fields[3],
-		Number:    uint16(number),
+		Number:    uint32(number),
 	}
 
 	return bet, nil

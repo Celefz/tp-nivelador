@@ -5,7 +5,7 @@ TYPE_END = 2
 
 BATCH_HEADER_LEN = 2
 BET_HEADER_LEN = 2
-MIN_BET_LEN = 18
+MIN_BET_LEN = 20
 
 def parse_message_type(packet: bytes) -> int:
     message_type = packet[0]
@@ -48,7 +48,7 @@ def serialize_bet(bet) -> bytes:
     bet_data.extend(last_name)
     bet_data.extend(birthdate)
     bet_data.extend(bet.document.to_bytes(4, byteorder="big"))
-    bet_data.extend(bet.number.to_bytes(2, byteorder="big"))
+    bet_data.extend(bet.number.to_bytes(4, byteorder="big"))
 
     return bytes(bet_data)
 
