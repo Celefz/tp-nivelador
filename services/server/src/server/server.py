@@ -3,6 +3,7 @@ import logger
 import safe_socket
 import protocol
 from lottery import Lottery
+import threading
 
 _PACKET_LEN_SIZE = 2
 
@@ -20,12 +21,30 @@ class Server:
         server_host: str,
         server_port: int,
         storage_path: str = "/tmp/lottery_bets.csv",
+        agency_quorum_min: int = 1,
     ) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.agency_quorum_min = max(1, agency_quorum_min)
+        self._storage_lock = threading.Lock()
+        self._quorum_condition = threading.Condition()
+        self._completed_agencies = set()
+
         with open(storage_path, "a"):
             pass
+
         self.lottery = Lottery(storage_path)
+
+    def _register_agency(self, agency_id):
+        with self._quorum_condition:
+            self._completed_agencies.add(agency_id)
+            if len(self._completed_agencies) >= self.agency_quorum_min:
+                self._quorum_condition.notify_all()
+
+    def _wait_for_agency_quorum(self):
+        with self._quorum_condition:
+            while len(self._completed_agencies) < self.agency_quorum_min:
+                self._quorum_condition.wait()
 
     def _handle_client(self, client_socket):
         action = "handle-client"
@@ -40,20 +59,28 @@ class Server:
                     break
 
                 bets = protocol.deserialize_batch(packet)
-                self.lottery.store_bets(bets)
 
-            for stored_bet in self.lottery.load_bets():
-                if self.lottery.has_won(stored_bet) and stored_bet.agency_id == agency_id:
-                    safe_socket.send_all(client_socket, protocol.serialize_batch([stored_bet], agency_id))
+                with self._storage_lock:
+                    self.lottery.store_bets(bets)
 
-            safe_socket.send_all(client_socket, protocol.serialize_end())
+            self._register_agency(agency_id)
+            self._wait_for_agency_quorum()
+
+            with self._storage_lock:
+                stored_bets =  self.lottery.load_bets()
+                for stored_bet in stored_bets:
+                    if self.lottery.has_won(stored_bet) and stored_bet.agency_id == agency_id:
+                        safe_socket.send_all(
+                            client_socket,
+                            protocol.serialize_batch([stored_bet], agency_id),
+                        )
+
+                safe_socket.send_all(client_socket, protocol.serialize_end())
 
             logger.info(action, logger.LogResult.success)
 
         except Exception as e:
-            logger.error(
-                action, logger.LogResult.fail, "err", e
-            )
+            logger.error(action, logger.LogResult.fail, "err", e)
 
         finally:
             client_socket.close()
@@ -70,6 +97,11 @@ class Server:
                 except Exception as e:
                     logger.error(action, logger.LogResult.fail)
                     raise e
-                logger.info(action, logger.LogResult.success)
 
-                self._handle_client(client_socket)
+                logger.info(action, logger.LogResult.success)
+                client_thread = threading.Thread(
+                    target=self._handle_client,
+                    args=(client_socket,),
+                    daemon=True,
+                )
+                client_thread.start()
