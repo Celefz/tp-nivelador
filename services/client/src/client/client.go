@@ -24,6 +24,7 @@ type ClientConfig struct {
 	AgencyId   string
 	InputFile  string
 	OutputFile string
+	BatchSize  string
 }
 
 type Client struct {
