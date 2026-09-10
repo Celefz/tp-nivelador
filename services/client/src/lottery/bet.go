@@ -22,7 +22,7 @@ type Bet struct {
 	Number    uint16
 }
 
-func parseBetFromCsv(line string, agencyId uint8) (Bet, error) {
+func ParseBetFromCsv(line string, agencyId uint8) (Bet, error) {
 	fields := strings.Split(line, ",")
 
 	if len(fields) != FIELD_AMOUNT {
@@ -51,11 +51,7 @@ func parseBetFromCsv(line string, agencyId uint8) (Bet, error) {
 	return bet, nil
 }
 
-func ParseBetFromCSV(line string, agencyId uint8) (Bet, error) {
-	return parseBetFromCsv(line, agencyId)
-}
-
-func parseBetToCsv(bet Bet) string {
+func ParseBetToCsv(bet Bet) string {
 	return fmt.Sprintf(
 		"%s,%s,%d,%s,%d",
 		bet.FirstName,
@@ -64,8 +60,4 @@ func parseBetToCsv(bet Bet) string {
 		bet.Birthdate,
 		bet.Number,
 	)
-}
-
-func ParseBetToCSV(bet Bet) string {
-	return parseBetToCsv(bet)
 }
