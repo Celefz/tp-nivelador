@@ -9,16 +9,31 @@ import (
 
 const (
 	TYPE_BET byte = 1
+	TYPE_END byte = 2
 
 	HEADER_LEN     = 4
 	MIN_PACKET_LEN = 20
 )
 
-func serialize(bet lottery.Bet) []byte {
+func EndPacket(agencyID uint8) []byte {
+	packet := make([]byte, 0, 4)
+	packet = binary.BigEndian.AppendUint16(packet, 2)
+	packet = append(packet, TYPE_END, agencyID)
+	return packet
+}
+
+func IsEndPacket(data []byte) bool {
+	return len(data) == 1 && data[0] == TYPE_END
+}
+
+func Serialize(bet lottery.Bet) []byte {
 	betData := make([]byte, 0, 100)
 
 	firstNameLen := len(bet.FirstName)
 	lastNameLen := len(bet.LastName)
+
+	payloadLen := MIN_PACKET_LEN + firstNameLen + lastNameLen
+	betData = binary.BigEndian.AppendUint16(betData, uint16(payloadLen)) // 2B
 
 	betData = append(betData, TYPE_BET)            // 1B
 	betData = append(betData, bet.AgencyId)        // 1B
@@ -34,7 +49,7 @@ func serialize(bet lottery.Bet) []byte {
 	return betData
 }
 
-func deserialize(betData []byte) (lottery.Bet, error) {
+func Deserialize(betData []byte) (lottery.Bet, error) {
 	if len(betData) < HEADER_LEN {
 		return lottery.Bet{}, fmt.Errorf("packet too short")
 	}

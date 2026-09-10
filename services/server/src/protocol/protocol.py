@@ -1,9 +1,19 @@
-from services.server.src_frozen.lottery.bet import Bet
+from lottery import Bet
 
 TYPE_BET = 1
+TYPE_END = 2
 
 HEADER_LEN = 4
 MIN_PACKET_LEN = 20
+
+
+def end_packet() -> bytes:
+    payload = bytearray([TYPE_END])
+    return len(payload).to_bytes(2, byteorder="big") + bytes(payload)
+
+
+def is_end_packet(packet: bytes) -> bool:
+    return len(packet) == 2 and packet[0] == TYPE_END
 
 
 def serialize(bet) -> bytes:
@@ -14,7 +24,11 @@ def serialize(bet) -> bytes:
     first_name_len = len(first_name)
     last_name_len = len(last_name)
 
+    payload_len = MIN_PACKET_LEN + first_name_len + last_name_len
+
     bet_data = bytearray()
+
+    bet_data.extend(payload_len.to_bytes(2, byteorder="big"))
 
     bet_data.append(TYPE_BET)
     bet_data.append(bet.agency_id)
