@@ -17,7 +17,7 @@ const (
 )
 
 func is_valid_type(t byte) bool {
-	return t == TYPE_BET || t == TYPE_END
+	return t == TYPE_BETS || t == TYPE_END
 }
 
 func ParseMessageType(packet []byte) (byte, error) {
@@ -42,8 +42,8 @@ func IsEndPacket(data []byte) bool {
 
 func SerializeBatch(bets []lottery.Bet, agencyId uint8) []byte {
 	batchData := make([]byte, 0, 100)
-	batchData = append(batchData, TYPE_BET) // 1B
-	batchData = append(batchData, agencyId) // 1B
+	batchData = append(batchData, TYPE_BETS) // 1B
+	batchData = append(batchData, agencyId)  // 1B
 
 	for _, bet := range bets {
 		batchData = append(batchData, SerializeBet(bet)...)
@@ -85,7 +85,7 @@ func DeserializeBatch(batchData []byte) ([]lottery.Bet, error) {
 		return nil, err
 	}
 
-	if messageType != TYPE_BET {
+	if messageType != TYPE_BETS {
 		return nil, fmt.Errorf("invalid bet type: %d", batchData[0])
 	}
 
